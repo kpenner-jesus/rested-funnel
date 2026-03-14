@@ -36,8 +36,8 @@ export default function RoomsPage() {
   const subtotal   = SITE_CONFIG.rooms.reduce((s, r) => s + r.pricePerNight * getCount(r.sku) * Math.max(1, nights), 0);
 
   const handleContinue = () => {
-    const isGroup = sessionStorage.getItem("isGroupBooking") === "true";
-    router.push(isGroup ? "/meeting-rooms" : "/quote");
+  const isGroup = sessionStorage.getItem("isGroupBooking") === "true";
+  router.push(isGroup ? "/meeting-rooms" : "/contact");
   };
 
   return (
