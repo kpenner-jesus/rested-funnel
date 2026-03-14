@@ -3,18 +3,32 @@
 import { useRouter } from "next/navigation";
 import { useFunnelStore } from "./store";
 
-export default function Home() {
+export default function WelcomeStep() {
   const router = useRouter();
-  const { setSegment } = useFunnelStore();
+  const setFunnelData = useFunnelStore((state) => state.setData);
 
-  const handleChoice = (segment: "group" | "family" | "wedding") => {
-    setSegment(segment);
-    router.push("/details");
+  // --- KEPT EXACTLY AS PROVIDED ---
+  const handleSegmentSelection = (segment: string) => {
+    setFunnelData({ 
+      eventSegment: segment,
+      adultCount: 1,
+      childCount: 0 
+    });
+    router.push("/event-type");
   };
+
+  // --- KEPT EXACTLY AS PROVIDED ---
+  const segments = [
+    { name: "Group Retreat", desc: "(Church, Corporate, Youth...)" },
+    { name: "Group Conference", desc: "(Business, Gov, Non-Profit...)" },
+    { name: "Family Gathering", desc: "(Reunion, Holiday, Milestone)" },
+    { name: "Wedding", desc: "(Ceremony, Reception, or Both)" },
+    { name: "Individual Guest", desc: "(Solo, Couple, Small Group)" },
+  ];
 
   return (
     <main className="min-h-screen bg-stone-50 font-sans text-stone-900">
-      {/* Hero Section */}
+      {/* BEAUTIFUL BACKGROUND GRAPHIC SECTION */}
       <div className="relative h-[60vh] flex items-center justify-center bg-emerald-900 overflow-hidden">
         <div className="absolute inset-0 opacity-40">
           <img 
@@ -28,50 +42,36 @@ export default function Home() {
             Wilderness Edge
           </h1>
           <p className="text-xl md:text-2xl text-emerald-100 font-light max-w-2xl mx-auto">
-            Your journey to the perfect retreat starts here. Let&apos;s build your custom quote in 60 seconds.
+            Welcome to Manitoba&apos;s premier waterfront venue. Let&apos;s build your personalized quote.
           </p>
         </div>
       </div>
 
-      {/* Choice Section */}
-      <div className="max-w-6xl mx-auto px-4 -mt-20 relative z-20 pb-20">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          
-          {/* Group Retreat */}
-          <button 
-            onClick={() => handleChoice("group")}
-            className="bg-white p-8 rounded-3xl shadow-2xl hover:scale-105 transition-transform text-left border border-stone-100 group"
-          >
-            <div className="w-16 h-16 bg-emerald-100 rounded-2xl mb-6 flex items-center justify-center text-3xl group-hover:bg-emerald-600 group-hover:text-white transition-colors">👥</div>
-            <h2 className="text-2xl font-black mb-2">Group Retreat</h2>
-            <p className="text-stone-500">Perfect for corporate teams, church groups, or large organizations.</p>
-          </button>
-
-          {/* Family Gathering */}
-          <button 
-            onClick={() => handleChoice("family")}
-            className="bg-white p-8 rounded-3xl shadow-2xl hover:scale-105 transition-transform text-left border border-stone-100 group"
-          >
-            <div className="w-16 h-16 bg-blue-100 rounded-2xl mb-6 flex items-center justify-center text-3xl group-hover:bg-blue-600 group-hover:text-white transition-colors">🏡</div>
-            <h2 className="text-2xl font-black mb-2">Family & Friends</h2>
-            <p className="text-stone-500">Reunions, birthdays, or just a weekend getaway with your inner circle.</p>
-          </button>
-
-          {/* Wedding */}
-          <button 
-            onClick={() => handleChoice("wedding")}
-            className="bg-white p-8 rounded-3xl shadow-2xl hover:scale-105 transition-transform text-left border border-stone-100 group"
-          >
-            <div className="w-16 h-16 bg-rose-100 rounded-2xl mb-6 flex items-center justify-center text-3xl group-hover:bg-rose-600 group-hover:text-white transition-colors">💍</div>
-            <h2 className="text-2xl font-black mb-2">Weddings</h2>
-            <p className="text-stone-500">Celebrate your big day surrounded by nature&apos;s untamed beauty.</p>
-          </button>
-
+      {/* ORIGINAL BUTTONS AND LINKS SECTION */}
+      <div className="max-w-6xl mx-auto px-4 -mt-24 relative z-20 pb-20">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {segments.map((seg) => (
+            <button
+              key={seg.name}
+              onClick={() => handleSegmentSelection(seg.name)}
+              className="bg-white p-8 rounded-3xl shadow-2xl hover:scale-[1.02] transition-all text-left border border-stone-100 group flex flex-col h-full shadow-emerald-900/5"
+            >
+              <span className="text-2xl font-black text-stone-800 group-hover:text-emerald-700 transition-colors mb-2">
+                {seg.name}
+              </span>
+              <span className="text-sm text-stone-400 font-medium leading-relaxed">
+                {seg.desc}
+              </span>
+              <div className="mt-auto pt-6 flex items-center text-emerald-600 font-bold text-sm opacity-0 group-hover:opacity-100 transition-opacity">
+                SELECT CATEGORY →
+              </div>
+            </button>
+          ))}
         </div>
 
         <div className="mt-16 text-center">
-          <p className="text-stone-400 uppercase tracking-widest text-sm font-bold">
-            Trusted by over 500 groups annually
+          <p className="text-stone-400 uppercase tracking-widest text-xs font-black">
+            Step 1 of 5 • Trusted by over 500 groups annually
           </p>
         </div>
       </div>
