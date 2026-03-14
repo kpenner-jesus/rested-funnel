@@ -223,10 +223,3 @@ export default function HomePage() {
     </div>
   );
 }
-```
-
-This uses inline styles with CSS variables directly — no Tailwind, no conflicts, no surprises. The segment cards stack vertically, the hero renders properly, and the stagger animation makes cards fade in one by one.
-
-Also — in `siteConfig.ts`, make sure `heroImageUrl` is set to an actual landscape photo URL, not the logo. The logo has its own `venueLogo` field. If you don't have a hero photo URL handy, you can use this one temporarily:
-```
-https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=1600&q=80
