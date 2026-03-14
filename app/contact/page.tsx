@@ -1,220 +1,287 @@
 "use client";
-import { useMemo } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
+import emailjs from "@emailjs/browser";
 import { useBookingStore } from "../store";
 import { SITE_CONFIG } from "../siteConfig";
+import { EMAIL_KEYS } from "../emailKeys";
 
 const fmt = (n: number) => n.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const fmtDate = (d: string) => d ? new Date(d + "T00:00:00").toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" }) : "—";
+const fmtDate = (d: string) => d
+  ? new Date(d + "T00:00:00").toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" })
+  : "—";
 
-interface Line { label: string; detail?: string; amount: number; }
-
-export default function QuotePage() {
+export default function ContactPage() {
   const router = useRouter();
+
   const adults            = useBookingStore((s) => s.adults);
   const children          = useBookingStore((s) => s.children);
   const childrenAvgAge    = useBookingStore((s) => s.childrenAvgAge);
   const checkIn           = useBookingStore((s) => s.checkIn);
   const checkOut          = useBookingStore((s) => s.checkOut);
+  const segment           = useBookingStore((s) => s.segment);
+  const eventType         = useBookingStore((s) => s.eventType);
   const roomCounts        = useBookingStore((s) => s.roomCounts);
   const meetingRoomCounts = useBookingStore((s) => s.meetingRoomCounts);
   const selectedMeals     = useBookingStore((s) => s.selectedMeals);
   const activityCounts    = useBookingStore((s) => s.activityCounts);
-  const contactName       = useBookingStore((s) => s.contactName);
-  const contactEmail      = useBookingStore((s) => s.contactEmail);
-  const contactPhone      = useBookingStore((s) => s.contactPhone);
-  const segment           = useBookingStore((s) => s.segment);
-  const eventType         = useBookingStore((s) => s.eventType);
-  const resetBooking      = useBookingStore((s) => s.resetBooking);
+  const setContactName    = useBookingStore((s) => s.setContactName);
+  const setContactEmail   = useBookingStore((s) => s.setContactEmail);
+  const setContactPhone   = useBookingStore((s) => s.setContactPhone);
+  const setContactNotes   = useBookingStore((s) => s.setContactNotes);
+  const storedName        = useBookingStore((s) => s.contactName);
+  const storedEmail       = useBookingStore((s) => s.contactEmail);
+  const storedPhone       = useBookingStore((s) => s.contactPhone);
+  const storedNotes       = useBookingStore((s) => s.contactNotes);
 
-  const nights = useMemo(() => {
+  const [name,    setName]    = useState(storedName    || "");
+  const [email,   setEmail]   = useState(storedEmail   || "");
+  const [phone,   setPhone]   = useState(storedPhone   || "");
+  const [notes,   setNotes]   = useState(storedNotes   || "");
+  const [error,   setError]   = useState("");
+  const [sending, setSending] = useState(false);
+  const [sent,    setSent]    = useState(false);
+
+  const progress = 100;
+
+  const nights = (() => {
     if (!checkIn || !checkOut) return 0;
     return Math.max(0, Math.round((new Date(checkOut).getTime() - new Date(checkIn).getTime()) / 86400000));
-  }, [checkIn, checkOut]);
+  })();
 
-  const roomLines = useMemo<Line[]>(() =>
-    SITE_CONFIG.rooms.filter((r) => (roomCounts[r.sku] ?? 0) > 0).map((r) => {
-      const q = roomCounts[r.sku];
-      return { label: `${r.name} × ${q}`, detail: `${q} room${q!==1?"s":""} × ${nights} night${nights!==1?"s":""} × $${r.pricePerNight}/night`, amount: r.pricePerNight * q * nights };
-    }), [roomCounts, nights]);
+  // Build totals
+  const roomSubtotal = SITE_CONFIG.rooms.reduce((s, r) =>
+    s + r.pricePerNight * (roomCounts[r.sku] ?? 0) * nights, 0);
+  const meetingSubtotal = SITE_CONFIG.meetingRooms.reduce((s, r) =>
+    s + r.pricePerDay * (meetingRoomCounts[r.sku] ?? 0) * nights, 0);
+  const mealSubtotal = (() => {
+    let t = 0;
+    for (const [key, sel] of Object.entries(selectedMeals)) {
+      if (!sel) continue;
+      const mk = key.split("_")[1];
+      const prices: Record<string, number> = {
+        breakfast:      SITE_CONFIG.meals.adultBreakfastPrice,
+        lunch:          SITE_CONFIG.meals.adultLunchPrice,
+        supper:         SITE_CONFIG.meals.adultSupperPrice,
+        nightsnack:     SITE_CONFIG.meals.nightSnackPrice,
+        nutritionbreak: SITE_CONFIG.meals.nutritionBreakPrice,
+      };
+      t += (prices[mk] ?? 0) * adults;
+      if (children > 0 && childrenAvgAge > 0) {
+        const kr = mk === "nightsnack"
+          ? SITE_CONFIG.meals.childNightSnackRate
+          : SITE_CONFIG.meals.childMealRatePerYear;
+        t += kr * childrenAvgAge * children;
+      }
+    }
+    return t;
+  })();
+  const activitySubtotal = SITE_CONFIG.activities.reduce((s, a) =>
+    s + a.price * (activityCounts[a.sku] ?? 0), 0);
+  const pretax = roomSubtotal + meetingSubtotal + mealSubtotal + activitySubtotal;
+  const tax    = SITE_CONFIG.taxes.reduce((s, t) => s + pretax * t.rate, 0);
+  const grand  = pretax + tax;
 
-  const meetingLines = useMemo<Line[]>(() =>
-    SITE_CONFIG.meetingRooms.filter((r) => (meetingRoomCounts[r.sku] ?? 0) > 0).map((r) => {
-      const q = meetingRoomCounts[r.sku];
-      return { label: `${r.name} × ${q}`, detail: `${nights} day${nights!==1?"s":""} × $${r.pricePerDay.toLocaleString()}/day`, amount: r.pricePerDay * q * nights };
-    }), [meetingRoomCounts, nights]);
+  // Build human-readable summaries for the email
+  const roomsSummary = SITE_CONFIG.rooms
+    .filter((r) => (roomCounts[r.sku] ?? 0) > 0)
+    .map((r) => `${r.name} x${roomCounts[r.sku]} (${nights} nights) = $${fmt(r.pricePerNight * roomCounts[r.sku] * nights)}`)
+    .join("\n") || "None selected";
 
-  const mealLines = useMemo<Line[]>(() => {
-    const mc: Record<string,number> = {};
-    for (const [k, s] of Object.entries(selectedMeals)) { if (s) { const mk = k.split("_")[1]; mc[mk] = (mc[mk]??0)+1; } }
-    const MLABELS: Record<string,{label:string;adultPrice:number}> = {
-      breakfast:      { label: "Breakfast",      adultPrice: SITE_CONFIG.meals.adultBreakfastPrice },
-      lunch:          { label: "Lunch",           adultPrice: SITE_CONFIG.meals.adultLunchPrice },
-      supper:         { label: "Supper",          adultPrice: SITE_CONFIG.meals.adultSupperPrice },
-      nightsnack:     { label: "Night Snack",     adultPrice: SITE_CONFIG.meals.nightSnackPrice },
-      nutritionbreak: { label: "Nutrition Break", adultPrice: SITE_CONFIG.meals.nutritionBreakPrice },
+  const meetingSummary = SITE_CONFIG.meetingRooms
+    .filter((r) => (meetingRoomCounts[r.sku] ?? 0) > 0)
+    .map((r) => `${r.name} x${meetingRoomCounts[r.sku]} (${nights} days) = $${fmt(r.pricePerDay * meetingRoomCounts[r.sku] * nights)}`)
+    .join("\n") || "None selected";
+
+  const mealsSummary = (() => {
+    const mc: Record<string, number> = {};
+    for (const [k, s] of Object.entries(selectedMeals)) {
+      if (s) { const mk = k.split("_")[1]; mc[mk] = (mc[mk] ?? 0) + 1; }
+    }
+    const labels: Record<string, string> = {
+      breakfast: "Breakfast", lunch: "Lunch", supper: "Supper",
+      nightsnack: "Night Snack", nutritionbreak: "Nutrition Break",
     };
-    return Object.entries(mc).map(([mk, days]) => {
-      const c = MLABELS[mk]; if (!c) return null;
-      const adultCost = c.adultPrice * adults * days;
-      const kidsCost  = children > 0 && childrenAvgAge > 0
-        ? (mk==="nightsnack" ? SITE_CONFIG.meals.childNightSnackRate : SITE_CONFIG.meals.childMealRatePerYear) * childrenAvgAge * children * days : 0;
-      return { label: `${c.label} × ${days} day${days!==1?"s":""}`, detail: `${adults} adults × $${c.adultPrice.toFixed(2)}${children>0?" + children":""} × ${days} day${days!==1?"s":""}`, amount: adultCost + kidsCost };
-    }).filter(Boolean) as Line[];
-  }, [selectedMeals, adults, children, childrenAvgAge]);
+    return Object.entries(mc)
+      .map(([k, d]) => `${labels[k] ?? k} x ${d} days`)
+      .join("\n") || "None selected";
+  })();
 
-  const activityLines = useMemo<Line[]>(() =>
-    SITE_CONFIG.activities.filter((a) => (activityCounts[a.sku] ?? 0) > 0).map((a) => {
-      const q = activityCounts[a.sku];
-      return { label: a.name, detail: `${q} participant${q!==1?"s":""} × $${a.price % 1===0?a.price:a.price.toFixed(2)}`, amount: a.price * q };
-    }), [activityCounts]);
+  const activitiesSummary = SITE_CONFIG.activities
+    .filter((a) => (activityCounts[a.sku] ?? 0) > 0)
+    .map((a) => `${a.name} - ${activityCounts[a.sku]} participants = $${fmt(a.price * activityCounts[a.sku])}`)
+    .join("\n") || "None selected";
 
-  const roomSub     = roomLines.reduce((s,l) => s+l.amount, 0);
-  const meetingSub  = meetingLines.reduce((s,l) => s+l.amount, 0);
-  const mealSub     = mealLines.reduce((s,l) => s+l.amount, 0);
-  const activitySub = activityLines.reduce((s,l) => s+l.amount, 0);
-  const pretax      = roomSub + meetingSub + mealSub + activitySub;
-  const taxLines    = SITE_CONFIG.taxes.map((t) => ({ name: t.name, rate: t.rate, amount: pretax * t.rate }));
-  const totalTax    = taxLines.reduce((s,t) => s+t.amount, 0);
-  const grand       = pretax + totalTax;
+  const taxBreakdown = SITE_CONFIG.taxes
+    .map((t) => `${t.name} (${(t.rate * 100).toFixed(0)}%): $${fmt(pretax * t.rate)}`)
+    .join(", ");
 
-  const quoteRef = useMemo(() => {
-    const d = new Date().toISOString().split("T")[0].replace(/-/g,"");
-    return `WE-${d}-${String(adults).padStart(3,"0")}`;
-  }, [adults]);
+  const handleSubmit = async () => {
+    if (!name.trim())                           { setError("Please enter your name."); return; }
+    if (!email.trim() || !email.includes("@")) { setError("Please enter a valid email."); return; }
 
-  const handleReset = () => {
-    resetBooking();
-    sessionStorage.removeItem("isGroupBooking");
-    router.push("/");
+    setContactName(name.trim());
+    setContactEmail(email.trim());
+    setContactPhone(phone.trim());
+    setContactNotes(notes.trim());
+    setError("");
+    setSending(true);
+
+    // Check keys are configured
+    if (
+      EMAIL_KEYS.SERVICE_ID.includes("xxx") ||
+      EMAIL_KEYS.TEMPLATE_ID.includes("xxx") ||
+      EMAIL_KEYS.PUBLIC_KEY.includes("xxx")
+    ) {
+      console.warn("EmailJS keys not configured in app/emailKeys.ts — skipping email send, proceeding to quote.");
+      setSent(true);
+      setTimeout(() => router.push("/quote"), 1800);
+      return;
+    }
+
+    const params = {
+      contact_name:           name.trim(),
+      contact_email:          email.trim(),
+      contact_phone:          phone.trim() || "Not provided",
+      contact_notes:          notes.trim() || "None",
+      event_type:             eventType ? `${segment} — ${eventType}` : segment || "Not specified",
+      check_in:               fmtDate(checkIn),
+      check_out:              fmtDate(checkOut),
+      nights:                 String(nights),
+      adults:                 String(adults),
+      children:               children > 0 ? `${children} (avg age ${childrenAvgAge})` : "None",
+      rooms_summary:          roomsSummary,
+      meeting_rooms_summary:  meetingSummary,
+      meals_summary:          mealsSummary,
+      activities_summary:     activitiesSummary,
+      subtotal:               `$${fmt(pretax)}`,
+      taxes:                  taxBreakdown,
+      grand_total:            `$${fmt(grand)}`,
+      venue_name:             SITE_CONFIG.venueName,
+      venue_email:            SITE_CONFIG.venueEmail,
+      venue_phone:            SITE_CONFIG.venuePhone,
+      // to_email is used by some EmailJS templates to set the recipient
+      to_email:               SITE_CONFIG.venueEmail,
+      reply_to:               email.trim(),
+    };
+
+    try {
+      // Send venue notification
+      await emailjs.send(
+        EMAIL_KEYS.SERVICE_ID,
+        EMAIL_KEYS.TEMPLATE_ID,
+        params,
+        EMAIL_KEYS.PUBLIC_KEY
+      );
+
+      // Send guest confirmation (if a separate template is configured)
+      if (EMAIL_KEYS.GUEST_TEMPLATE_ID && !EMAIL_KEYS.GUEST_TEMPLATE_ID.includes("xxx")) {
+        await emailjs.send(
+          EMAIL_KEYS.SERVICE_ID,
+          EMAIL_KEYS.GUEST_TEMPLATE_ID,
+          { ...params, to_email: email.trim() },
+          EMAIL_KEYS.PUBLIC_KEY
+        );
+      }
+
+      setSent(true);
+      setTimeout(() => router.push("/quote"), 1800);
+
+    } catch (err: any) {
+      setSending(false);
+      console.error("EmailJS send failed:", err);
+      setError(
+        `Email failed to send (${err?.text ?? err?.message ?? "unknown error"}). ` +
+        `Please contact us directly at ${SITE_CONFIG.venueEmail}`
+      );
+    }
   };
 
+  if (sent) return (
+    <div className="tf-step">
+      <div className="tf-body" style={{ justifyContent: "center", alignItems: "center", textAlign: "center" }}>
+        <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>✅</div>
+        <h2 style={{ fontFamily: "var(--font-display)", fontSize: "2rem", fontWeight: 500, marginBottom: "0.75rem" }}>
+          Enquiry received!
+        </h2>
+        <p style={{ color: "var(--text-secondary)", maxWidth: "340px", lineHeight: 1.6 }}>
+          Thanks, {name.split(" ")[0]}. We sent your quote to{" "}
+          <strong>{email}</strong> and notified our team.
+          A coordinator will follow up within 1–2 business days.
+        </p>
+      </div>
+    </div>
+  );
+
   return (
-    <>
-      <style>{`
-        @media print {
-          body { background: white !important; }
-          .no-print { display: none !important; }
-          .tf-invoice-total-row { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          @page { margin: 1.5cm; size: A4; }
-        }
-      `}</style>
+    <div className="tf-step">
+      <div className="tf-progress">
+        <div className="tf-progress-fill" style={{ width: `${progress}%` }} />
+      </div>
+      <div className="tf-body">
+        <div className="tf-step-label tf-animate">Final step</div>
+        <h1 className="tf-question tf-animate tf-animate-delay-1">
+          Almost done — <em>who are you?</em>
+        </h1>
+        <p className="tf-subtext tf-animate tf-animate-delay-2">
+          We will send your quote here and follow up within 1–2 business days.
+        </p>
 
-      <div style={{ minHeight: "100vh", padding: "2rem 1.5rem 6rem", maxWidth: "680px", margin: "0 auto" }}>
-
-        {/* Screen action bar */}
-        <div className="no-print" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
-          <button className="tf-back" onClick={handleReset} style={{ margin: 0 }}>← Start over</button>
-          <button className="tf-ok" style={{ marginTop: 0, padding: "0.6rem 1.2rem" }} onClick={() => window.print()}>
-            🖨️ Print / Save PDF
-          </button>
-        </div>
-
-        {/* Invoice header */}
-        <div className="tf-invoice-header" style={{ marginBottom: "1.5rem" }}>
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem", marginBottom: "1.25rem" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-              {SITE_CONFIG.venueLogo && (
-                <img src={SITE_CONFIG.venueLogo} alt={SITE_CONFIG.venueName}
-                  style={{ height: "44px", width: "auto", objectFit: "contain" }}
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-              )}
-              <div>
-                <div style={{ fontWeight: 700, fontSize: "1rem" }}>{SITE_CONFIG.venueName}</div>
-                <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "0.15rem" }}>{SITE_CONFIG.venueAddress}</div>
-                <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>{SITE_CONFIG.venuePhone} · {SITE_CONFIG.venueEmail}</div>
-              </div>
+        {/* Quote recap */}
+        <div className="tf-callout tf-animate tf-animate-delay-2" style={{ marginBottom: "2rem" }}>
+          {segment && (
+            <div style={{ fontWeight: 500, marginBottom: "0.25rem" }}>
+              {eventType ? `${segment} — ${eventType}` : segment}
             </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontFamily: "var(--font-display)", fontSize: "1.4rem", fontWeight: 500 }}>Quote</div>
-              <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Ref: {quoteRef}</div>
-              <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "0.2rem" }}>
-                {new Date().toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" })}
-              </div>
-            </div>
+          )}
+          <div style={{ fontWeight: 300, fontSize: "0.85rem" }}>
+            {adults} adult{adults !== 1 ? "s" : ""}
+            {children > 0 ? ` + ${children} children` : ""}
+            {checkIn && checkOut && <> · {fmtDate(checkIn)} → {fmtDate(checkOut)}</>}
           </div>
-
-          <div style={{ borderTop: "1px solid rgba(0,0,0,0.07)", paddingTop: "1rem", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "0.875rem" }}>
-            {[
-              contactName && { label: "Contact", value: contactName },
-              contactEmail && { label: "Email", value: contactEmail },
-              contactPhone && { label: "Phone", value: contactPhone },
-              segment && { label: "Event", value: eventType ? `${segment} — ${eventType}` : segment },
-              checkIn && { label: "Check-in", value: fmtDate(checkIn) },
-              checkOut && { label: "Check-out", value: fmtDate(checkOut) },
-              { label: "Nights", value: String(nights) },
-              { label: "Guests", value: `${adults} adults${children > 0 ? ` + ${children} children` : ""}` },
-            ].filter(Boolean).map((item: any, i) => (
-              <div key={i}>
-                <div style={{ fontSize: "0.68rem", fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: "0.2rem" }}>{item.label}</div>
-                <div style={{ fontSize: "0.85rem", fontWeight: 500 }}>{item.value}</div>
-              </div>
-            ))}
+          <div style={{ fontFamily: "var(--font-display)", fontSize: "1.3rem", fontWeight: 500, color: "var(--accent)", marginTop: "0.5rem" }}>
+            Estimated total: ${fmt(grand)} CAD
           </div>
         </div>
 
-        {/* Line item sections */}
-        {roomLines.length > 0     && <InvoiceSection title="Accommodation"  lines={roomLines}     subtotal={roomSub} />}
-        {meetingLines.length > 0  && <InvoiceSection title="Meeting Rooms"  lines={meetingLines}  subtotal={meetingSub} />}
-        {mealLines.length > 0     && <InvoiceSection title="Catered Meals"  lines={mealLines}     subtotal={mealSub} />}
-        {activityLines.length > 0 && <InvoiceSection title="Activities"     lines={activityLines} subtotal={activitySub} />}
-
-        {/* Totals */}
-        <div className="tf-invoice-grand">
-          <div className="tf-invoice-tax-row" style={{ borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
-            <span>Subtotal</span>
-            <span style={{ fontWeight: 600 }}>${fmt(pretax)}</span>
-          </div>
-          {taxLines.map((t) => (
-            <div key={t.name} className="tf-invoice-tax-row">
-              <span>{t.name} ({(t.rate * 100).toFixed(0)}%)</span>
-              <span>${fmt(t.amount)}</span>
+        <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+          {[
+            { id: "name",  label: "Full name",       type: "text",  val: name,  set: setName,  ph: "Sarah Penner",        req: true  },
+            { id: "email", label: "Email address",   type: "email", val: email, set: setEmail, ph: "sarah@example.com",   req: true  },
+            { id: "phone", label: "Phone",            type: "tel",   val: phone, set: setPhone, ph: "(204) 555-0123",       req: false },
+          ].map(({ id, label, type, val, set, ph, req }, i) => (
+            <div key={id} className={`tf-animate tf-animate-delay-${i + 3}`}>
+              <label style={{ fontSize: "0.72rem", fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)", display: "block", marginBottom: "0.5rem" }}>
+                {label} {!req && <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(optional)</span>}
+              </label>
+              <input type={type} value={val}
+                onChange={(e) => { (set as any)(e.target.value); setError(""); }}
+                placeholder={ph}
+                className="tf-input-box" />
             </div>
           ))}
-          <div className="tf-invoice-total-row">
-            <div>
-              <div className="tf-invoice-total-label">Total (CAD)</div>
-              <div style={{ fontSize: "0.72rem", opacity: 0.6, marginTop: "0.15rem" }}>All taxes included</div>
-            </div>
-            <div className="tf-invoice-total-amount">${fmt(grand)}</div>
+
+          <div className="tf-animate tf-animate-delay-6">
+            <label style={{ fontSize: "0.72rem", fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)", display: "block", marginBottom: "0.5rem" }}>
+              Notes <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(optional)</span>
+            </label>
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
+              placeholder="Dietary needs, accessibility requirements, flexible dates…"
+              rows={3} className="tf-input-box" />
           </div>
         </div>
 
-        {/* Disclaimer */}
-        <div style={{ marginTop: "1.25rem", fontSize: "0.75rem", color: "var(--text-muted)", lineHeight: 1.7, fontWeight: 300 }}>
-          <strong style={{ fontWeight: 500, color: "var(--text-secondary)" }}>This is an estimate only.</strong>{" "}
-          A coordinator will follow up within 1–2 business days to confirm availability and final pricing.
-          Questions? {SITE_CONFIG.venueEmail} · {SITE_CONFIG.venuePhone}
-        </div>
+        {error && <div className="tf-alert-error" style={{ marginTop: "1rem" }}>{error}</div>}
 
-        {/* Bottom action buttons */}
-        <div className="no-print" style={{ display: "flex", gap: "0.75rem", marginTop: "2rem" }}>
-          <button className="tf-back" style={{ margin: 0 }} onClick={handleReset}>← Start over</button>
-          <button className="tf-ok" style={{ marginTop: 0 }} onClick={() => window.print()}>
-            🖨️ Print / Save PDF
-          </button>
-        </div>
-      </div>
-    </>
-  );
-}
+        <button className="tf-ok" onClick={handleSubmit} disabled={sending} style={{ marginTop: "1.5rem" }}>
+          {sending ? "Sending…" : "Send & View Quote"}
+          {!sending && <svg viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+        </button>
 
-function InvoiceSection({ title, lines, subtotal }: { title: string; lines: Line[]; subtotal: number }) {
-  return (
-    <div className="tf-invoice-section" style={{ marginBottom: "0.75rem" }}>
-      <div className="tf-invoice-section-header">{title}</div>
-      {lines.map((line, i) => (
-        <div key={i} className="tf-invoice-row">
-          <div style={{ flex: 1 }}>
-            <div className="tf-invoice-label">{line.label}</div>
-            {line.detail && <div className="tf-invoice-detail">{line.detail}</div>}
-          </div>
-          <div className="tf-invoice-amount">${fmt(line.amount)}</div>
-        </div>
-      ))}
-      <div className="tf-invoice-subtotal">
-        <span>{title} subtotal</span>
-        <span>${fmt(subtotal)}</span>
+        <p style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "0.875rem", fontWeight: 300 }}>
+          Your information is only used to follow up on this enquiry.
+        </p>
+        <button className="tf-back" onClick={() => router.back()}>← Back</button>
       </div>
     </div>
   );
