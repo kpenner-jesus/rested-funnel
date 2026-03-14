@@ -1,35 +1,24 @@
+"use client";
+
 // ============================================================
 //  app/page.tsx — STEP 1: CHOOSE YOUR EVENT SEGMENT
 // ============================================================
 //
-//  This is the first page guests see. It asks the most
-//  fundamental question: what kind of event is this?
+//  This is the first page guests see. It asks: what kind of
+//  event is this? Each segment card leads to a tailored funnel.
 //
-//  WHAT THIS PAGE DOES
-//  ────────────────────
-//  Displays a card for each segment defined in
-//  siteConfig.eventSegments. When a guest picks one:
-//
-//    • If the segment has event types (e.g. "Group Retreat"
-//      has Church, Corporate, Youth...) → go to /event-type
-//
-//    • If the segment has NO event types (e.g. "Individual
-//      Guest") → skip /event-type and go straight to /guests
-//
-//  This is the entry point to the entire funnel. Everything
-//  the guest does from here is tracked in the Zustand store.
+//  ROUTING LOGIC
+//  ──────────────
+//  Segment has sub-types (e.g. Group Retreat) → /event-type
+//  Segment has NO sub-types (e.g. Individual Guest) → /guests
 //
 //  CUSTOMIZATION TIPS
 //  ───────────────────
-//  • To add or remove segments: edit siteConfig.eventSegments
-//  • To change the hero image: update heroImageUrl in siteConfig
-//  • To skip segment selection entirely (one venue type only):
-//    remove the cards and call setSegment() with a fixed value
-//    then router.push("/guests") directly on page load
+//  • Add/remove segments: edit siteConfig.eventSegments
+//  • Change hero image: update heroImageUrl in siteConfig
+//  • Change venue name/tagline: update venueName/venueTagline
 //
 // ============================================================
-
-"use client";
 
 import { useRouter } from "next/navigation";
 import { useBookingStore } from "./store";
@@ -47,16 +36,14 @@ export default function HomePage() {
     setSegment(segmentName);
     setEventType(""); // Clear any previously selected event type
 
-    // Find the segment config to check if it has sub-types
     const segmentConfig = SITE_CONFIG.eventSegments.find(
       (s) => s.name === segmentName
     );
 
     if (segmentConfig && segmentConfig.types.length > 0) {
-      // Has sub-types → go to event type selector
       router.push("/event-type");
     } else {
-      // No sub-types (e.g. Individual Guest) → skip to guests
+      // No sub-types (Individual Guest) — skip straight to guests
       router.push("/guests");
     }
   };
@@ -64,7 +51,7 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-stone-950 text-stone-100">
 
-      {/* ── HERO SECTION ─────────────────────────────────────── */}
+      {/* ── HERO ─────────────────────────────────────────────── */}
       <div className="relative h-56 sm:h-72 overflow-hidden">
         {SITE_CONFIG.heroImageUrl && (
           <img
@@ -76,13 +63,8 @@ export default function HomePage() {
             }}
           />
         )}
-        {/* Dark gradient overlay */}
-        <div className="absolute inset-0 bg-gradient-to-b from-stone-950/40
-                        to-stone-950/80" />
-
-        {/* Venue name and tagline over the hero */}
-        <div className="absolute inset-0 flex flex-col items-center
-                        justify-center text-center px-6">
+        <div className="absolute inset-0 bg-gradient-to-b from-stone-950/40 to-stone-950/80" />
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6">
           {SITE_CONFIG.venueLogo && (
             <img
               src={SITE_CONFIG.venueLogo}
@@ -104,23 +86,18 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* ── SEGMENT SELECTION ────────────────────────────────── */}
+      {/* ── SEGMENT CARDS ────────────────────────────────────── */}
       <div className="max-w-xl mx-auto px-6 py-10">
-
         <div className="text-center mb-8">
           <h2 className="text-xl font-bold text-stone-100">
             What brings you to {SITE_CONFIG.venueName.split(" ")[0]}?
           </h2>
           <p className="text-stone-400 text-sm mt-2">
-            Select the option that best describes your visit.
-            We will tailor your quote accordingly.
+            Select the option that best describes your visit and we will
+            tailor your quote accordingly.
           </p>
         </div>
 
-        {/* ── SEGMENT CARDS ──────────────────────────────────────
-            One card per segment in siteConfig.eventSegments.
-            To add or remove segments, edit siteConfig.ts only.
-        ─────────────────────────────────────────────────────── */}
         <div className="space-y-3">
           {SITE_CONFIG.eventSegments.map((segment) => (
             <button
@@ -132,8 +109,8 @@ export default function HomePage() {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="font-semibold text-stone-100 group-hover:text-emerald-400
-                                  transition-colors">
+                  <div className="font-semibold text-stone-100
+                                  group-hover:text-emerald-400 transition-colors">
                     {segment.name}
                   </div>
                   {segment.desc && (
@@ -151,7 +128,7 @@ export default function HomePage() {
           ))}
         </div>
 
-        {/* ── VENUE CONTACT FOOTER ─────────────────────────────── */}
+        {/* ── FOOTER CONTACT ───────────────────────────────────── */}
         <div className="mt-10 text-center text-stone-600 text-xs space-y-1">
           <p>Questions? We are happy to help.</p>
           <p>
@@ -170,8 +147,8 @@ export default function HomePage() {
             </a>
           </p>
         </div>
-
       </div>
+
     </div>
   );
 }
