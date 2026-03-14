@@ -1,96 +1,157 @@
+// ============================================================
+//  app/event-type/page.tsx — STEP: WHAT KIND OF EVENT?
+// ============================================================
+//
+//  This page lets the guest pick the specific type of event
+//  within the segment they chose on the previous page.
+//
+//  For example:
+//    Segment: "Group Retreat"
+//    Event Types: Church / Faith-based, Corporate, Youth, etc.
+//
+//  WHAT THIS PAGE DOES
+//  ────────────────────
+//  • Reads the segment chosen on the home page from the store
+//  • Looks up the event types for that segment in siteConfig
+//  • Displays them as selectable cards
+//  • Saves the choice and continues to /guests
+//
+//  SKIPPING THIS STEP
+//  ───────────────────
+//  If the chosen segment has an empty types array (e.g.
+//  "Individual Guest"), this page is skipped automatically
+//  by the home page — guests go straight from the segment
+//  selector to /guests.
+//
+//  CUSTOMIZATION TIPS
+//  ───────────────────
+//  • To add or remove event types: edit siteConfig.eventSegments
+//  • To skip this step for all segments: remove the event-type
+//    route from the home page navigation entirely and go straight
+//    to /guests after segment selection
+//
+// ============================================================
+
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useFunnelStore } from "../store";
+import { useBookingStore } from "../store";
+import { SITE_CONFIG } from "../siteConfig";
 
-export default function EventTypeStep() {
+export default function EventTypePage() {
   const router = useRouter();
-  const funnelData = useFunnelStore((state) => state.data);
-  const setFunnelData = useFunnelStore((state) => state.setData);
-  
-  // This prevents the page from loading before the "Brain" remembers what they clicked
-  const [isLoaded, setIsLoaded] = useState(false);
 
-  useEffect(() => {
-    setIsLoaded(true);
-    // If they magically landed on this page without picking a segment in Step 1, send them back!
-    if (!funnelData.eventSegment) {
-      router.push("/");
+  // ── STORE ────────────────────────────────────────────────
+  const segment      = useBookingStore((s) => s.segment);
+  const storedType   = useBookingStore((s) => s.eventType);
+  const setEventType = useBookingStore((s) => s.setEventType);
+
+  // ── LOCAL STATE ──────────────────────────────────────────
+  const [selected, setSelected] = useState(storedType || "");
+  const [error, setError] = useState("");
+
+  // Find the segment config to get its event types
+  const segmentConfig = SITE_CONFIG.eventSegments.find(
+    (s) => s.name === segment
+  );
+  const eventTypes = segmentConfig?.types ?? [];
+
+  // ── NAVIGATION ───────────────────────────────────────────
+  const handleSubmit = () => {
+    if (!selected) {
+      setError("Please select an event type to continue.");
+      return;
     }
-    
-    // If they picked "Individual Guest", they don't need this step. Fast-forward them to Dates!
-    if (funnelData.eventSegment === "Individual Guest") {
-      router.push("/guests");
-    }
-  }, [funnelData.eventSegment, router]);
-
-  if (!isLoaded || !funnelData.eventSegment || funnelData.eventSegment === "Individual Guest") {
-    return null; // Show a blank screen for a split second while calculating
-  }
-
-  // --- THE SMART LOGIC ---
-  // We define the buttons based on what they clicked in Step 1
-  let title = "Tell us about your event";
-  let options: string[] = [];
-
-  if (funnelData.eventSegment === "Group Retreat") {
-    title = "What type of retreat are you planning?";
-    options = ["Church / Faith-based", "Marriage / Couples", "Women's / Ladies'", "Men's Retreat", "Youth / School", "Corporate / Business", "Wellness / Personal Growth", "Other"];
-  } else if (funnelData.eventSegment === "Group Conference") {
-    title = "What type of conference are you planning?";
-    options = ["Corporate / Business", "Government / Department", "Non-Profit Organization", "Church / Faith-based", "First Nations / Indigenous", "College / University", "Other"];
-  } else if (funnelData.eventSegment === "Family Gathering") {
-    title = "What type of family gathering are you planning?";
-    options = ["Family Reunion", "Family Holiday", "Milestone Anniversary", "Milestone Birthday", "Retirement Celebration", "Other"];
-  } else if (funnelData.eventSegment === "Wedding") {
-    title = "Tell us about your special day!";
-    options = ["Ceremony & Reception", "Ceremony Only", "Reception Only"];
-  }
-
-  // When they click a specific type, save it and move to Step 3 (Dates)
-  const handleTypeSelection = (selection: string) => {
-    setFunnelData({ specificType: selection });
+    setEventType(selected);
     router.push("/guests");
   };
 
-  return (
-    <div className="min-h-screen bg-slate-50 pb-20 font-sans pt-12">
-      <div className="max-w-3xl mx-auto px-4 relative z-10">
-        
-        {/* Navigation / Progress Bar */}
-        <div className="mb-8">
-          <button onClick={() => router.push("/")} className="text-sm font-medium text-slate-500 hover:text-blue-600 transition flex items-center space-x-1 mb-4">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
-            <span>Back to Start</span>
-          </button>
-          <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-            <span className="font-bold text-slate-800">{funnelData.eventSegment}</span>
-            <span className="text-sm font-medium text-slate-500 bg-slate-100 px-3 py-1 rounded-full border border-slate-200">Step 2 of 5</span>
-          </div>
-        </div>
-
-        {/* Main Card */}
-        <div className="bg-white shadow-xl rounded-2xl p-8 md:p-12 border border-slate-100">
-          <h1 className="text-3xl font-extrabold text-slate-900 mb-2 text-center tracking-tight">
-            {title}
-          </h1>
-          <p className="text-slate-500 text-center mb-10">
-            This helps us connect you with the right coordinator and tailor your quote.
+  // If no segment is set (direct navigation), go back to start
+  if (!segment) {
+    return (
+      <div className="min-h-screen bg-stone-950 text-stone-100 flex items-center
+                      justify-center px-6">
+        <div className="text-center">
+          <p className="text-stone-400 mb-4">
+            Please start from the beginning.
           </p>
+          <button
+            onClick={() => router.push("/")}
+            className="px-6 py-3 rounded-lg bg-emerald-600 hover:bg-emerald-500
+                       text-white font-semibold transition-colors"
+          >
+            Start over
+          </button>
+        </div>
+      </div>
+    );
+  }
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {options.map((opt) => (
-              <button
-                key={opt}
-                onClick={() => handleTypeSelection(opt)}
-                className="px-5 py-4 border-2 border-slate-200 rounded-xl font-semibold text-slate-700 hover:border-blue-400 hover:bg-slate-50 transition-all text-left flex items-center justify-between group"
-              >
-                {opt}
-                <svg className="w-5 h-5 text-slate-300 group-hover:text-blue-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
-              </button>
-            ))}
+  return (
+    <div className="min-h-screen bg-stone-950 text-stone-100">
+
+      {/* ── PAGE HEADER ─────────────────────────────────────── */}
+      <div className="bg-stone-900 border-b border-stone-800 px-6 py-5">
+        <div className="max-w-xl mx-auto">
+          <p className="text-xs uppercase tracking-widest text-emerald-500 mb-1">
+            Step 1b of 8
+          </p>
+          <h1 className="text-2xl font-bold text-stone-100">
+            What type of {segment.toLowerCase()}?
+          </h1>
+          <p className="text-stone-400 text-sm mt-1">
+            This helps us tailor your quote and assign the right coordinator.
+          </p>
+        </div>
+      </div>
+
+      <div className="max-w-xl mx-auto px-6 py-10 space-y-4">
+
+        {/* ── EVENT TYPE CARDS ─────────────────────────────────── */}
+        {eventTypes.map((type) => (
+          <button
+            key={type}
+            onClick={() => {
+              setSelected(type);
+              setError("");
+            }}
+            className={`w-full text-left px-5 py-4 rounded-xl border
+                        transition-all font-medium ${
+              selected === type
+                ? "bg-emerald-900 border-emerald-500 text-emerald-100"
+                : "bg-stone-900 border-stone-700 text-stone-300 hover:border-stone-500"
+            }`}
+          >
+            {type}
+          </button>
+        ))}
+
+        {/* Error message */}
+        {error && (
+          <div className="text-red-400 text-sm bg-red-950 border border-red-800
+                          rounded-lg px-4 py-3">
+            {error}
           </div>
+        )}
+
+        {/* ── NAVIGATION ───────────────────────────────────────── */}
+        <div className="flex gap-3 pt-2">
+          <button
+            onClick={() => router.back()}
+            className="flex-1 px-6 py-3 rounded-lg border border-stone-700
+                       text-stone-300 hover:bg-stone-800 transition-colors"
+          >
+            ← Back
+          </button>
+          <button
+            onClick={handleSubmit}
+            className="flex-1 px-6 py-3 rounded-lg bg-emerald-600
+                       hover:bg-emerald-500 text-white font-semibold
+                       transition-colors"
+          >
+            Continue →
+          </button>
         </div>
 
       </div>
