@@ -189,13 +189,22 @@ export default function ContactPage() {
       setSent(true);
       setTimeout(() => router.push("/quote"), 1800);
 
-    } catch (err: any) {
-      setSending(false);
-      console.error("EmailJS send failed:", err);
-      setError(
-        `Email failed to send (${err?.text ?? err?.message ?? "unknown error"}). ` +
-        `Please contact us directly at ${SITE_CONFIG.venueEmail}`
-      );
+   } catch (err: any) {
+  setSending(false);
+  // Log everything we know about the error
+  console.error("EmailJS full error object:", JSON.stringify(err, null, 2));
+  console.error("err.text:", err?.text);
+  console.error("err.message:", err?.message);
+  console.error("err.status:", err?.status);
+  console.error("SERVICE_ID:", EMAIL_KEYS.SERVICE_ID);
+  console.error("TEMPLATE_ID:", EMAIL_KEYS.TEMPLATE_ID);
+  console.error("PUBLIC_KEY length:", EMAIL_KEYS.PUBLIC_KEY?.length);
+
+  const reason = err?.text || err?.message || err?.status
+    ? `${err?.status ?? ""} ${err?.text ?? ""} ${err?.message ?? ""}`.trim()
+    : "unknown error — check browser console for details";
+
+  setError(`Email failed to send: ${reason}. Please contact us directly at ${SITE_CONFIG.venueEmail}`);
     }
   };
 
