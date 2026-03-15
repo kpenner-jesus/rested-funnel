@@ -152,13 +152,35 @@ export default function ContactPage() {
       reply_to:              email.trim(),
     };
 
-    try {
-      // ── SEND 1: Venue notification ──────────────────────────
-      await emailjs.send(
-        EMAIL_KEYS.SERVICE_ID,
-        EMAIL_KEYS.TEMPLATE_ID,
-        params
-      );
+try {
+  // Initialize EmailJS right before sending — guaranteed to run first
+  emailjs.init({ publicKey: EMAIL_KEYS.PUBLIC_KEY });
+
+  // ── SEND 1: Venue notification ──────────────────────────
+  await emailjs.send(
+    EMAIL_KEYS.SERVICE_ID,
+    EMAIL_KEYS.TEMPLATE_ID,
+    params
+  );
+
+  // ── SEND 2: Guest confirmation ──────────────────────────
+  if (EMAIL_KEYS.GUEST_TEMPLATE_ID && EMAIL_KEYS.GUEST_TEMPLATE_ID.length > 0) {
+    await emailjs.send(
+      EMAIL_KEYS.SERVICE_ID,
+      EMAIL_KEYS.GUEST_TEMPLATE_ID,
+      { ...params, to_email: email.trim() }
+    );
+  }
+
+  setSent(true);
+  setTimeout(() => router.push("/quote"), 1800);
+
+} catch (err: any) {
+  setSending(false);
+  console.error("EmailJS error:", err);
+  const reason = err?.text || err?.message || err?.toString() || "unknown error";
+  setError(`Email failed to send: ${reason}. Please contact us directly at ${SITE_CONFIG.venueEmail}`);
+}
 
       // ── SEND 2: Guest confirmation ──────────────────────────
       if (EMAIL_KEYS.GUEST_TEMPLATE_ID && EMAIL_KEYS.GUEST_TEMPLATE_ID.length > 0) {
