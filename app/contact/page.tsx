@@ -170,11 +170,11 @@ export default function ContactPage() {
     try {
       // Send venue notification
       await emailjs.send(
-        EMAIL_KEYS.SERVICE_ID,
-        EMAIL_KEYS.TEMPLATE_ID,
-        params,
-        EMAIL_KEYS.PUBLIC_KEY
-      );
+      EMAIL_KEYS.SERVICE_ID,
+      EMAIL_KEYS.GUEST_TEMPLATE_ID,
+      { ...params, to_email: email.trim() },
+      { publicKey: EMAIL_KEYS.PUBLIC_KEY }
+        );
 
       // Send guest confirmation (if a separate template is configured)
       if (EMAIL_KEYS.GUEST_TEMPLATE_ID && !EMAIL_KEYS.GUEST_TEMPLATE_ID.includes("xxx")) {
