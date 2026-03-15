@@ -49,7 +49,6 @@ export default function ContactPage() {
     return Math.max(0, Math.round((new Date(checkOut).getTime() - new Date(checkIn).getTime()) / 86400000));
   })();
 
-  // Build totals
   const roomSubtotal = SITE_CONFIG.rooms.reduce((s, r) =>
     s + r.pricePerNight * (roomCounts[r.sku] ?? 0) * nights, 0);
   const meetingSubtotal = SITE_CONFIG.meetingRooms.reduce((s, r) =>
@@ -82,7 +81,6 @@ export default function ContactPage() {
   const tax    = SITE_CONFIG.taxes.reduce((s, t) => s + pretax * t.rate, 0);
   const grand  = pretax + tax;
 
-  // Build human-readable summaries for the email
   const roomsSummary = SITE_CONFIG.rooms
     .filter((r) => (roomCounts[r.sku] ?? 0) > 0)
     .map((r) => `${r.name} x${roomCounts[r.sku]} (${nights} nights) = $${fmt(r.pricePerNight * roomCounts[r.sku] * nights)}`)
@@ -127,84 +125,62 @@ export default function ContactPage() {
     setError("");
     setSending(true);
 
-    // Check keys are configured
-    if (
-      EMAIL_KEYS.SERVICE_ID.includes("xxx") ||
-      EMAIL_KEYS.TEMPLATE_ID.includes("xxx") ||
-      EMAIL_KEYS.PUBLIC_KEY.includes("xxx")
-    ) {
-      console.warn("EmailJS keys not configured in app/emailKeys.ts — skipping email send, proceeding to quote.");
-      setSent(true);
-      setTimeout(() => router.push("/quote"), 1800);
-      return;
-    }
-
     const params = {
-      contact_name:           name.trim(),
-      contact_email:          email.trim(),
-      contact_phone:          phone.trim() || "Not provided",
-      contact_notes:          notes.trim() || "None",
-      event_type:             eventType ? `${segment} — ${eventType}` : segment || "Not specified",
-      check_in:               fmtDate(checkIn),
-      check_out:              fmtDate(checkOut),
-      nights:                 String(nights),
-      adults:                 String(adults),
-      children:               children > 0 ? `${children} (avg age ${childrenAvgAge})` : "None",
-      rooms_summary:          roomsSummary,
-      meeting_rooms_summary:  meetingSummary,
-      meals_summary:          mealsSummary,
-      activities_summary:     activitiesSummary,
-      subtotal:               `$${fmt(pretax)}`,
-      taxes:                  taxBreakdown,
-      grand_total:            `$${fmt(grand)}`,
-      venue_name:             SITE_CONFIG.venueName,
-      venue_email:            SITE_CONFIG.venueEmail,
-      venue_phone:            SITE_CONFIG.venuePhone,
-      date: new Date().toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" }),
-      quote_ref: `WE-${new Date().toISOString().split("T")[0].replace(/-/g,"")}-${String(adults).padStart(3,"0")}`,
-      // to_email is used by some EmailJS templates to set the recipient
-      to_email:               SITE_CONFIG.venueEmail,
-      reply_to:               email.trim(),
+      contact_name:          name.trim(),
+      contact_email:         email.trim(),
+      contact_phone:         phone.trim() || "Not provided",
+      contact_notes:         notes.trim() || "None",
+      event_type:            eventType ? `${segment} — ${eventType}` : segment || "Not specified",
+      check_in:              fmtDate(checkIn),
+      check_out:             fmtDate(checkOut),
+      nights:                String(nights),
+      adults:                String(adults),
+      children:              children > 0 ? `${children} (avg age ${childrenAvgAge})` : "None",
+      rooms_summary:         roomsSummary,
+      meeting_rooms_summary: meetingSummary,
+      meals_summary:         mealsSummary,
+      activities_summary:    activitiesSummary,
+      subtotal:              `$${fmt(pretax)}`,
+      taxes:                 taxBreakdown,
+      grand_total:           `$${fmt(grand)}`,
+      venue_name:            SITE_CONFIG.venueName,
+      venue_email:           SITE_CONFIG.venueEmail,
+      venue_phone:           SITE_CONFIG.venuePhone,
+      date:                  new Date().toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" }),
+      quote_ref:             `WE-${new Date().toISOString().split("T")[0].replace(/-/g,"")}-${String(adults).padStart(3,"0")}`,
+      to_email:              SITE_CONFIG.venueEmail,
+      reply_to:              email.trim(),
     };
 
     try {
-      // Send venue notification
+      // ── SEND 1: Venue notification ──────────────────────────
+      // Uses TEMPLATE_ID — sends to venue email address
       await emailjs.send(
-      EMAIL_KEYS.SERVICE_ID,
-      EMAIL_KEYS.GUEST_TEMPLATE_ID,
-      { ...params, to_email: email.trim() },
-      { publicKey: EMAIL_KEYS.PUBLIC_KEY }
-        );
+        EMAIL_KEYS.SERVICE_ID,
+        EMAIL_KEYS.TEMPLATE_ID,
+        params,
+        { publicKey: EMAIL_KEYS.PUBLIC_KEY }
+      );
 
-      // Send guest confirmation (if a separate template is configured)
-      if (EMAIL_KEYS.GUEST_TEMPLATE_ID && !EMAIL_KEYS.GUEST_TEMPLATE_ID.includes("xxx")) {
+      // ── SEND 2: Guest confirmation ──────────────────────────
+      // Uses GUEST_TEMPLATE_ID — sends to guest email address
+      if (EMAIL_KEYS.GUEST_TEMPLATE_ID && EMAIL_KEYS.GUEST_TEMPLATE_ID.length > 0) {
         await emailjs.send(
           EMAIL_KEYS.SERVICE_ID,
           EMAIL_KEYS.GUEST_TEMPLATE_ID,
           { ...params, to_email: email.trim() },
-          EMAIL_KEYS.PUBLIC_KEY
+          { publicKey: EMAIL_KEYS.PUBLIC_KEY }
         );
       }
 
       setSent(true);
       setTimeout(() => router.push("/quote"), 1800);
 
-   } catch (err: any) {
-  setSending(false);
-  // Log everything we know about the error
-  console.error("EmailJS full error object:", JSON.stringify(err, null, 2));
-  console.error("err.text:", err?.text);
-  console.error("err.message:", err?.message);
-  console.error("err.status:", err?.status);
-  console.error("SERVICE_ID:", EMAIL_KEYS.SERVICE_ID);
-  console.error("TEMPLATE_ID:", EMAIL_KEYS.TEMPLATE_ID);
-  console.error("PUBLIC_KEY length:", EMAIL_KEYS.PUBLIC_KEY?.length);
-
-  const reason = err?.text || err?.message || err?.status
-    ? `${err?.status ?? ""} ${err?.text ?? ""} ${err?.message ?? ""}`.trim()
-    : "unknown error — check browser console for details";
-
-  setError(`Email failed to send: ${reason}. Please contact us directly at ${SITE_CONFIG.venueEmail}`);
+    } catch (err: any) {
+      setSending(false);
+      console.error("EmailJS error:", err);
+      const reason = err?.text || err?.message || "unknown error";
+      setError(`Email failed to send: ${reason}. Please contact us directly at ${SITE_CONFIG.venueEmail}`);
     }
   };
 
@@ -238,7 +214,6 @@ export default function ContactPage() {
           We will send your quote here and follow up within 1–2 business days.
         </p>
 
-        {/* Quote recap */}
         <div className="tf-callout tf-animate tf-animate-delay-2" style={{ marginBottom: "2rem" }}>
           {segment && (
             <div style={{ fontWeight: 500, marginBottom: "0.25rem" }}>
@@ -257,9 +232,9 @@ export default function ContactPage() {
 
         <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
           {[
-            { id: "name",  label: "Full name",       type: "text",  val: name,  set: setName,  ph: "Sarah Penner",        req: true  },
-            { id: "email", label: "Email address",   type: "email", val: email, set: setEmail, ph: "sarah@example.com",   req: true  },
-            { id: "phone", label: "Phone",            type: "tel",   val: phone, set: setPhone, ph: "(204) 555-0123",       req: false },
+            { id: "name",  label: "Full name",     type: "text",  val: name,  set: setName,  ph: "Sarah Penner",      req: true  },
+            { id: "email", label: "Email address", type: "email", val: email, set: setEmail, ph: "sarah@example.com", req: true  },
+            { id: "phone", label: "Phone",          type: "tel",   val: phone, set: setPhone, ph: "(204) 555-0123",     req: false },
           ].map(({ id, label, type, val, set, ph, req }, i) => (
             <div key={id} className={`tf-animate tf-animate-delay-${i + 3}`}>
               <label style={{ fontSize: "0.72rem", fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)", display: "block", marginBottom: "0.5rem" }}>
