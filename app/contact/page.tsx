@@ -152,15 +152,15 @@ export default function ContactPage() {
       reply_to:              email.trim(),
     };
 
-    try {
-      // ── SEND 1: Venue notification ──────────────────────────
-      // Uses TEMPLATE_ID — sends to venue email address
-      await emailjs.send(
-        EMAIL_KEYS.SERVICE_ID,
-        EMAIL_KEYS.TEMPLATE_ID,
-        params,
-        { publicKey: EMAIL_KEYS.PUBLIC_KEY }
-      );
+try {
+  // ── SEND 1: Venue notification ──────────────────────────
+  console.log("PUBLIC KEY VALUE:", JSON.stringify(EMAIL_KEYS.PUBLIC_KEY));
+  await emailjs.send(
+    EMAIL_KEYS.SERVICE_ID,
+    EMAIL_KEYS.TEMPLATE_ID,
+    params,
+    { publicKey: EMAIL_KEYS.PUBLIC_KEY }
+  );
 
       // ── SEND 2: Guest confirmation ──────────────────────────
       // Uses GUEST_TEMPLATE_ID — sends to guest email address
