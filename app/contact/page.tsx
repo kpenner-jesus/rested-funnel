@@ -152,24 +152,20 @@ export default function ContactPage() {
       reply_to:              email.trim(),
     };
 
-try {
-  // ── SEND 1: Venue notification ──────────────────────────
-  console.log("PUBLIC KEY VALUE:", JSON.stringify(EMAIL_KEYS.PUBLIC_KEY));
-  await emailjs.send(
-    EMAIL_KEYS.SERVICE_ID,
-    EMAIL_KEYS.TEMPLATE_ID,
-    params,
-    { publicKey: EMAIL_KEYS.PUBLIC_KEY }
-  );
+    try {
+      // ── SEND 1: Venue notification ──────────────────────────
+      await emailjs.send(
+        EMAIL_KEYS.SERVICE_ID,
+        EMAIL_KEYS.TEMPLATE_ID,
+        params
+      );
 
       // ── SEND 2: Guest confirmation ──────────────────────────
-      // Uses GUEST_TEMPLATE_ID — sends to guest email address
       if (EMAIL_KEYS.GUEST_TEMPLATE_ID && EMAIL_KEYS.GUEST_TEMPLATE_ID.length > 0) {
         await emailjs.send(
           EMAIL_KEYS.SERVICE_ID,
           EMAIL_KEYS.GUEST_TEMPLATE_ID,
-          { ...params, to_email: email.trim() },
-          { publicKey: EMAIL_KEYS.PUBLIC_KEY }
+          { ...params, to_email: email.trim() }
         );
       }
 
