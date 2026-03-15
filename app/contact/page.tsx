@@ -152,16 +152,25 @@ export default function ContactPage() {
       reply_to:              email.trim(),
     };
 
-    try {
-      // Initialize EmailJS right before sending
-      emailjs.init({ publicKey: EMAIL_KEYS.PUBLIC_KEY });
+try {
+  // HARDCODED TEST — bypassing EMAIL_KEYS completely
+  emailjs.init({ publicKey: "Sr8ne3azvu5WL5xCk" });
 
-      // Send 1 — venue notification
-      await emailjs.send(
-        EMAIL_KEYS.SERVICE_ID,
-        EMAIL_KEYS.TEMPLATE_ID,
-        params
-      );
+  await emailjs.send(
+    "service_z5vr2hr345",
+    "template_x5qjdb7t6",
+    params
+  );
+
+  setSent(true);
+  setTimeout(() => router.push("/quote"), 1800);
+
+} catch (err: any) {
+  setSending(false);
+  console.error("EmailJS error:", err);
+  const reason = err?.text || err?.message || "unknown error";
+  setError(`Email failed to send: ${reason}. Please contact us directly at ${SITE_CONFIG.venueEmail}`);
+}
 
       // Send 2 — guest confirmation
       if (EMAIL_KEYS.GUEST_TEMPLATE_ID && EMAIL_KEYS.GUEST_TEMPLATE_ID.length > 0) {
